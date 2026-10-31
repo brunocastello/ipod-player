@@ -26,7 +26,7 @@ struct ResetSettingsView: View {
         VStack(alignment: .leading, spacing: 0) {
             StatusBar(title: String(localized: "Reset Settings"))
             VStack(alignment: .leading, spacing: 8) {
-                Text("Do you want to reset your iPlayr?")
+                Text("Do you want to reset your iPod?")
                     .font(.system(size: 17, weight: .bold))
                 Text("This will reset all your settings. Your music library will not be modified.")
                     .font(.system(size: 13))

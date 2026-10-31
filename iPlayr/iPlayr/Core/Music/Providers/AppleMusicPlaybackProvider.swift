@@ -26,9 +26,12 @@ final class AppleMusicPlaybackProvider: PlaybackProvider {
     private var queueCancellable: AnyCancellable?
     private var refreshTask: Task<Void, Never>?
     private var isSkipping = false
+    private var durationCache: [String: TimeInterval] = [:]
+    private var durationTasks: [String: Task<Void, Never>] = [:]
 
     init(library: AppleMusicLibraryProvider) {
         self.library = library
+        durationCache = PlaybackDurationCache.all()
         observePlayer()
     }
 
@@ -41,6 +44,7 @@ final class AppleMusicPlaybackProvider: PlaybackProvider {
             guard tracks.indices.contains(fromIndex) else {
                 throw MusicPlayerError.invalidTrackIndex(index: fromIndex, totalTracks: tracks.count)
             }
+            cacheDurations(Array(tracks))
             musicPlayer.queue = ApplicationMusicPlayer.Queue(album: album, startingAt: tracks[fromIndex])
         case .playlist(let id):
             let playlist = try await library.playlist(id: id)
@@ -48,6 +52,7 @@ final class AppleMusicPlaybackProvider: PlaybackProvider {
             guard entries.indices.contains(fromIndex) else {
                 throw MusicPlayerError.invalidTrackIndex(index: fromIndex, totalTracks: entries.count)
             }
+            cacheDurations(Array(entries))
             musicPlayer.queue = ApplicationMusicPlayer.Queue(playlist: playlist, startingAt: entries[fromIndex])
         case .allSongs, .composer, .shuffleAll, .onTheGo:
             try await queueSongs(items, fromIndex: fromIndex)
@@ -69,6 +74,7 @@ final class AppleMusicPlaybackProvider: PlaybackProvider {
         guard let startingSong = songs.first(where: { $0.id.rawValue == items[fromIndex].id }) else {
             throw MusicPlayerError.trackNotFound
         }
+        cacheDurations(songs)
         musicPlayer.queue = ApplicationMusicPlayer.Queue(for: songs, startingAt: startingSong)
     }
 
@@ -194,7 +200,7 @@ final class AppleMusicPlaybackProvider: PlaybackProvider {
                 title: song.title,
                 artistName: song.artistName,
                 albumTitle: song.albumTitle,
-                duration: song.duration,
+                duration: resolvedDuration(for: song),
                 artwork: song.artwork.map(ArtworkRef.appleMusic)
             )
         }
@@ -205,6 +211,109 @@ final class AppleMusicPlaybackProvider: PlaybackProvider {
         default: break
         }
         onStateChange?()
+    }
+
+    /// MusicKit sometimes reports a zero duration for the song embedded in a queue
+    /// entry (notably for downloaded, DRM-protected library items), which zeroes the
+    /// Now Playing progress bar and time labels. Recover the duration from the
+    /// library or the local file when possible; otherwise look it up online once and
+    /// persist it, so later plays — including offline ones — keep working.
+    private func resolvedDuration(for song: Song) -> TimeInterval? {
+        if let duration = song.duration, duration > 0 { return duration }
+        let id = song.id.rawValue
+        if let cached = durationCache[id], cached > 0 { return cached }
+        if let stored = PlaybackDurationCache.duration(for: id), stored > 0 {
+            durationCache[id] = stored
+            return stored
+        }
+        fetchDuration(for: song)
+        return nil
+    }
+
+    private func fetchDuration(for song: Song) {
+        let id = song.id.rawValue
+        guard durationTasks[id] == nil else { return }
+        durationTasks[id] = Task { [weak self] in
+            guard let self else { return }
+            var duration: TimeInterval?
+            if let librarySong = try? await self.library.songs(ids: [id]).first {
+                duration = librarySong.duration
+            }
+            if (duration ?? 0) <= 0, let songs = try? await self.library.songs(matchingTitle: song.title) {
+                duration = Self.bestDuration(in: songs, artistName: song.artistName, albumTitle: song.albumTitle)
+            }
+            if (duration ?? 0) <= 0 {
+                duration = await self.catalogDuration(for: song)
+            }
+            if let duration, duration > 0 {
+                self.cacheDuration(duration, for: id)
+                if let current = self.currentTrack, current.id == id, (current.duration ?? 0) <= 0 {
+                    self.currentTrack = NowPlayingTrack(
+                        id: current.id,
+                        title: current.title,
+                        artistName: current.artistName,
+                        albumTitle: current.albumTitle,
+                        duration: duration,
+                        artwork: current.artwork
+                    )
+                    self.onStateChange?()
+                }
+            }
+            self.durationTasks[id] = nil
+        }
+    }
+
+    private static func bestDuration(in songs: [Song], artistName: String, albumTitle: String?) -> TimeInterval? {
+        let exact = songs.first { $0.artistName == artistName && $0.albumTitle == albumTitle }
+        let byArtist = songs.first { $0.artistName == artistName }
+        guard let duration = (exact ?? byArtist ?? songs.first)?.duration, duration > 0 else { return nil }
+        return duration
+    }
+
+    private func catalogDuration(for song: Song) async -> TimeInterval? {
+        let request = MusicCatalogResourceRequest<Song>(matching: \.id, equalTo: song.id)
+        guard let catalogSong = try? await request.response().items.first,
+              let duration = catalogSong.duration, duration > 0 else { return nil }
+        return duration
+    }
+
+    private func cacheDurations(_ tracks: [Track]) {
+        var values: [String: TimeInterval] = [:]
+        for track in tracks {
+            guard let duration = track.duration, duration > 0 else { continue }
+            values[track.id.rawValue] = duration
+        }
+        cacheDurations(values)
+    }
+
+    private func cacheDurations(_ songs: [Song]) {
+        var values: [String: TimeInterval] = [:]
+        for song in songs {
+            guard let duration = song.duration, duration > 0 else { continue }
+            values[song.id.rawValue] = duration
+        }
+        cacheDurations(values)
+    }
+
+    private func cacheDurations(_ entries: [Playlist.Entry]) {
+        var values: [String: TimeInterval] = [:]
+        for entry in entries {
+            guard let duration = entry.duration, duration > 0 else { continue }
+            values[entry.id.rawValue] = duration
+        }
+        cacheDurations(values)
+    }
+
+    private func cacheDurations(_ values: [String: TimeInterval]) {
+        guard !values.isEmpty else { return }
+        durationCache.merge(values) { _, new in new }
+        PlaybackDurationCache.set(values)
+    }
+
+    private func cacheDuration(_ duration: TimeInterval, for id: String) {
+        guard duration > 0 else { return }
+        durationCache[id] = duration
+        PlaybackDurationCache.set(duration, for: id)
     }
 }
 

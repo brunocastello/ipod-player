@@ -51,7 +51,7 @@ struct SettingsView: View {
     private func pane(for row: Row) -> InfoPaneContent {
         switch row {
         case .about:
-            return .storage(title: String(localized: "iPlayr"))
+            return .storage(title: String(localized: "iPod"))
         case .shuffle:
             return .info(title: String(localized: "Shuffle"), icon: .symbol(ImageNames.System.shuffle), caption: shuffleValue)
         case .repeatMode:

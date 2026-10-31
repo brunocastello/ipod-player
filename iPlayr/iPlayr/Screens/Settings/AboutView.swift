@@ -13,7 +13,7 @@ struct AboutView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            StatusBar(title: String(localized: "iPlayr"))
+            StatusBar(title: String(localized: "iPod"))
             ZStack {
                 LinearGradient(colors: [.aboutBackgroundTop, .aboutBackgroundBottom], startPoint: .top, endPoint: .bottom)
                 VStack(spacing: 0) {

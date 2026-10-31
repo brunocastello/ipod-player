@@ -31,7 +31,7 @@ struct HomeListView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            StatusBar(title: String(localized: "iPlayr"))
+            StatusBar(title: String(localized: "iPod"))
             ForEach(entries.indices, id: \.self) { index in
                 MenuItemView(menu: entries[index].menu, isSelected: scope.selection == index)
             }

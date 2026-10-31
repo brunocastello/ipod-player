@@ -31,7 +31,7 @@ struct ExtrasView: View {
             case .stopwatch:
                 return .info(title: title, icon: .symbol("stopwatch.fill"), caption: String(localized: "Time Laps"))
             case .screenLock:
-                return .info(title: title, icon: .symbol("lock.fill"), caption: String(localized: "Lock Your iPlayr"))
+                return .info(title: title, icon: .symbol("lock.fill"), caption: String(localized: "Lock Your iPod"))
             }
         }
     }

@@ -14,6 +14,9 @@ final class WheelTracker {
 struct iPlayrButtons: View {
     static let wheelDiameterRatio: CGFloat = 0.79
     static let glyphHeightRatio: CGFloat = 0.049
+    static let scrollTickDegrees: CGFloat = 15
+
+    private static let wheelCoordinateSpace = "iPlayrWheel"
 
     @State private var wheel = WheelTracker()
     @Environment(iPlayrButtonController.self) private var buttonController
@@ -29,7 +32,7 @@ struct iPlayrButtons: View {
                 Circle()
                     .fill(theme.currentTheme.wheelColor)
                     .frame(width: size * Self.wheelDiameterRatio, height: size * Self.wheelDiameterRatio)
-                    .gesture(dragGesture(in: size))
+                    .gesture(scrollGesture(in: size))
                     .accessibilityLabel("Scroll wheel")
                     .accessibilityAdjustableAction { direction in
                         switch direction {
@@ -55,25 +58,30 @@ struct iPlayrButtons: View {
                 makeTextButton("MENU", glyphHeight: glyphHeight, offset: -buttonOffset,
                                onTap: { buttonController.menuButtonPressed() },
                                onLongPress: { buttonController.menuLongPressed() })
+                    .simultaneousGesture(scrollGesture(in: size))
                 makeIconButton(kind: .playPause, glyphHeight: glyphHeight, accessibilityLabel: "Play or pause", offsetY: buttonOffset) { buttonController.playPauseButtonPressed() }
+                    .simultaneousGesture(scrollGesture(in: size))
                 makeSeekButton(kind: .next, glyphHeight: glyphHeight, accessibilityLabel: "Next track", offsetX: buttonOffset,
                              onTap: { buttonController.forwardEndAltButtonPressed() },
                              onLongPressStart: { buttonController.forwardLongPressStarted() },
                              onLongPressEnd: { buttonController.forwardLongPressEnded() })
+                    .simultaneousGesture(scrollGesture(in: size))
                 makeSeekButton(kind: .previous, glyphHeight: glyphHeight, accessibilityLabel: "Previous track", offsetX: -buttonOffset,
                              onTap: { buttonController.backwardEndAltButtonPressed() },
                              onLongPressStart: { buttonController.backwardLongPressStarted() },
                              onLongPressEnd: { buttonController.backwardLongPressEnded() })
+                    .simultaneousGesture(scrollGesture(in: size))
             }
             .frame(width: size, height: size * 0.9)
+            .coordinateSpace(.named(Self.wheelCoordinateSpace))
         }
     }
     
-    private func dragGesture(in size: CGFloat) -> some Gesture {
-        let center = size * Self.wheelDiameterRatio / 2
-        return DragGesture(minimumDistance: 0)
+    private func scrollGesture(in size: CGFloat) -> some Gesture {
+        let center = CGPoint(x: size / 2, y: size * 0.45)
+        return DragGesture(minimumDistance: 0, coordinateSpace: .named(Self.wheelCoordinateSpace))
             .onChanged { v in
-                var angle = atan2(v.location.x - center, center - v.location.y) * 180 / .pi
+                var angle = atan2(v.location.x - center.x, center.y - v.location.y) * 180 / .pi
                 if angle < 0 { angle += 360 }
 
                 guard let previousAngle = wheel.lastAngle else {
@@ -81,20 +89,23 @@ struct iPlayrButtons: View {
                     return
                 }
 
-                var theta = previousAngle - angle
+                var theta = angle - previousAngle
                 if theta > 180 { theta -= 360 }
                 if theta < -180 { theta += 360 }
                 wheel.lastAngle = angle
 
-                wheel.counter += theta
+                // Roda no sentido anti-horário (theta negativo) = scroll para cima.
+                wheel.counter -= theta
 
-                if wheel.counter > 30 {
-                    buttonController.scrollUp()
-                } else if wheel.counter < -30 {
-                    buttonController.scrollDown()
+                let steps = Int(wheel.counter / Self.scrollTickDegrees)
+                guard steps != 0 else { return }
+                wheel.counter -= CGFloat(steps) * Self.scrollTickDegrees
+
+                if steps > 0 {
+                    for _ in 0..<steps { buttonController.scrollUp() }
+                } else {
+                    for _ in 0..<(-steps) { buttonController.scrollDown() }
                 }
-
-                if abs(wheel.counter) > 30 { wheel.counter = 0 }
             }
             .onEnded { _ in
                 wheel.reset()

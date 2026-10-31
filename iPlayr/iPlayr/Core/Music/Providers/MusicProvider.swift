@@ -46,6 +46,7 @@ protocol LibraryProvider: Sendable {
     func genreArtists(id: String) async throws -> [LibraryItem]
     func composerSongs(name: String) async throws -> [LibraryItem]
 
+    func prefetchDurations() async
     func invalidateCache() async
 }
 

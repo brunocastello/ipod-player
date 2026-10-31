@@ -43,6 +43,10 @@ final class MusicLibraryStore {
     func loadSongsIfNeeded() async { await loadIfNeeded(.songs) }
     func loadComposersIfNeeded() async { await loadIfNeeded(.composers) }
 
+    func prefetchDurations() async {
+        await provider.prefetchDurations()
+    }
+
     func invalidate() async {
         await provider.invalidateCache()
         cache = [:]

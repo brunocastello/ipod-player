@@ -11,11 +11,14 @@ struct iPlayrApp: App {
     @State private var menuPreferences = MenuPreferences()
     @State private var onTheGo = OnTheGoStore()
     @State private var ratings = RatingStore()
+    @State private var offlineCacheStatus: OfflineCacheStatus
 
     init() {
         UIDevice.current.isBatteryMonitoringEnabled = true
         MPMediaLibrary.default().beginGeneratingLibraryChangeNotifications()
-        let library = AppleMusicLibraryProvider()
+        let cacheStatus = OfflineCacheStatus()
+        let library = AppleMusicLibraryProvider(status: cacheStatus)
+        _offlineCacheStatus = State(initialValue: cacheStatus)
         _libraryStore = State(initialValue: MusicLibraryStore(provider: library))
         _playerManager = State(initialValue: PlaybackController(provider: AppleMusicPlaybackProvider(library: library)))
         _authManager = State(initialValue: MusicAccountManager(providers: [.appleMusic: AppleMusicAccountProvider()]))
@@ -31,8 +34,12 @@ struct iPlayrApp: App {
                 .environment(menuPreferences)
                 .environment(onTheGo)
                 .environment(ratings)
+                .environment(offlineCacheStatus)
                 .onReceive(NotificationCenter.default.publisher(for: .MPMediaLibraryDidChange)) { _ in
-                    Task { await libraryStore.invalidate() }
+                    Task {
+                        await libraryStore.invalidate()
+                        await libraryStore.prefetchDurations()
+                    }
                 }
         }
     }

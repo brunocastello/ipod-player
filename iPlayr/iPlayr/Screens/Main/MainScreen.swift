@@ -4,6 +4,8 @@ struct iPlayrView: View {
     @State private var iPlayrController: iPlayrButtonController = .init()
     @Environment(ThemeManager.self) private var theme
     @Environment(PlaybackController.self) private var playerManager
+    @Environment(MusicAccountManager.self) private var authManager
+    @Environment(MusicLibraryStore.self) private var libraryStore
     @AppStorage(UserDefaultsKeys.deviceLayout.rawValue) private var deviceLayout: DeviceLayout = .defaultValue
 
     private var isActualSize: Bool { deviceLayout == .actualSize }
@@ -38,6 +40,9 @@ struct iPlayrView: View {
                                 ScreenGlassGlare()
                                     .clipShape(RoundedRectangle(cornerRadius: 8))
                             }
+                        }
+                        .overlay(alignment: .top) {
+                            OfflineCacheBanner()
                         }
                         .scaleEffect(isActualSize ? metrics.screenScale : 1)
                         .padding(.horizontal, isActualSize ? 0 : 16)
@@ -75,6 +80,10 @@ struct iPlayrView: View {
             #if SHOWCASE
             ShowcaseRunner.startIfRequested(controller: iPlayrController)
             #endif
+        }
+        .task(id: authManager.isAuthorized) {
+            guard authManager.isAuthorized else { return }
+            await libraryStore.prefetchDurations()
         }
     }
 }
